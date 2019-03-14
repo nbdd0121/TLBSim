@@ -19,11 +19,19 @@ struct tlb_entry_t {
     uint64_t pte;
     // -1 indicates this TLB entry is not valid
     // When not -1, bits (..16) are isolation ID (realms) and bits (15..0) are ASID.
-    int asid;
+    int asid = -1;
     int granularity;
 
+    bool valid() const noexcept {
+        return asid != -1;
+    }
+
+    void invalidate() noexcept {
+        asid = -1;
+    }
+
     // Check whether an ASID match
-    bool asid_match(int asid) {
+    bool asid_match(int asid) const noexcept {
         // In different realm
         if ((this->asid &~ 0xffff) != (asid &~ 0xffff)) return false;
         // Global page always match
@@ -33,7 +41,7 @@ struct tlb_entry_t {
     }
 
     // Check whether an ASID match when flushing
-    bool asid_match_flush(int asid) {
+    bool asid_match_flush(int asid) const noexcept {
         // In different realm
         if ((this->asid &~ 0xffff) != (asid &~ 0xffff)) return false;
         // Want global flush
@@ -54,7 +62,41 @@ struct tlb_entry_t {
  */
 int pte_permission_check(int pte, const tlbsim_req_t& req);
 
-int walk_page(tlb_entry_t& search, const tlbsim_req_t& req);
+struct tlb_stats_t;
+
+class TLB {
+public:
+    TLB* parent;
+    tlb_stats_t* stats;
+
+    TLB(TLB* parent, tlb_stats_t* stats): parent{parent}, stats{stats} {}
+
+    // Find an entry, and acquire a (possibly) fine-grained lock that prevents
+    // any race to the entry.
+    virtual bool find_and_lock(tlb_entry_t &entry) { return false; }
+
+    // Relase a (possibly) find-grained lock for an entry.
+    virtual void unlock(const tlb_entry_t &entry) {}
+
+    // Insert an entry, and unlock.
+    virtual void insert_and_unlock(const tlb_entry_t &entry) {}
+
+    virtual void flush_local(int asid, uint64_t vpn) {}
+
+    virtual int access(tlb_entry_t &search, const tlbsim_req_t& req);
+
+    virtual void flush(int asid, uint64_t vpn) {
+        flush_local(asid, vpn);
+        parent->flush(asid, vpn);
+    }
+};
+
+extern class Page_walker final: public TLB {
+public:
+    Page_walker(): TLB(nullptr, nullptr) {}
+    int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
+    void flush(int asid, uint64_t vpn) override {}
+} page_walker;
 
 }
 

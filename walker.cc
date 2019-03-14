@@ -40,7 +40,9 @@ int pte_permission_check(int pte, const tlbsim_req_t& req) {
     return -1;
 }
 
-int walk_page(tlb_entry_t& search, const tlbsim_req_t& req) {
+Page_walker page_walker;
+
+int Page_walker::access(tlb_entry_t& search, const tlbsim_req_t& req) {
     // Find out levels in total
     int levels;
     switch (req.satp & SATP_MODE) {
