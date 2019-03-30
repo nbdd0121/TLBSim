@@ -9,6 +9,8 @@
 #include "pgtable.h"
 #include "api.h"
 
+namespace tlbsim {
+
 // Represent an TLB entry.
 // This is the internally-used exchange formats between all different types of TLB.
 struct tlb_entry_t {
@@ -53,5 +55,7 @@ struct tlb_entry_t {
 int pte_permission_check(int pte, const tlbsim_req_t& req);
 
 int walk_page(tlb_entry_t& search, const tlbsim_req_t& req);
+
+}
 
 #endif // TLBSIM_TLB_H

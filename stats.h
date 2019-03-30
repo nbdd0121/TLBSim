@@ -8,6 +8,8 @@
 
 #include "util.h"
 
+namespace tlbsim {
+
 // Global page fault statistics
 extern atomic_u64_t v_fault;
 extern atomic_u64_t u_fault;
@@ -24,8 +26,25 @@ extern atomic_u64_t flush_gpage;
 extern atomic_u64_t flush_asid;
 extern atomic_u64_t flush_page;
 
+// Per-TLB statistics
+struct tlb_stats_t {
+    atomic_u64_t miss;
+    atomic_u64_t evict;
+    atomic_u64_t flush;
+
+    void reset() {
+        miss.store(0, std::memory_order_relaxed);
+        evict.store(0, std::memory_order_relaxed);
+        flush.store(0, std::memory_order_relaxed);
+    }
+
+    void print(const char* name);
+};
+
 void print_instrets();
 void print_faults();
 void print_flushes();
+
+}
 
 #endif // TLBSIM_STATS_H

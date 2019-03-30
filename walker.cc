@@ -13,6 +13,8 @@
 #include "util.h"
 #include "stats.h"
 
+namespace tlbsim {
+
 int pte_permission_check(int pte, const tlbsim_req_t& req) {
     if (!(pte & PTE_V)) {
         ++v_fault;
@@ -102,4 +104,6 @@ invalid:
     search.ppn = 0;
     search.pte = 0;
     return pte_permission_check(0, req);
+}
+
 }

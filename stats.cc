@@ -14,6 +14,8 @@ uint64_t tlbsim_instret;
 __attribute__((visibility("default")))
 uint64_t tlbsim_minstret;
 
+namespace tlbsim {
+
 atomic_u64_t v_fault;
 atomic_u64_t u_fault;
 atomic_u64_t s_fault;
@@ -56,4 +58,13 @@ void print_flushes() {
     fprintf(stderr, "  with      addr: %ld\n", *flush_gpage);
     fprintf(stderr, "  with asid     : %ld\n", *flush_asid);
     fprintf(stderr, "  with asid/addr: %ld\n", *flush_page);
+}
+
+void tlb_stats_t::print(const char* name) {
+    fprintf(stderr, "%s:\n", name);
+    fprintf(stderr, "  Miss    : %ld\n", *this->miss);
+    fprintf(stderr, "  Eviction: %ld\n", *this->evict);
+    fprintf(stderr, "  Flush   : %ld\n", *this->flush);
+}
+
 }

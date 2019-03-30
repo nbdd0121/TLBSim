@@ -8,6 +8,8 @@
 
 #include <atomic>
 
+namespace tlbsim {
+
 class Spinlock {
     std::atomic_flag flag = ATOMIC_FLAG_INIT;
 public:
@@ -25,6 +27,12 @@ typedef std::atomic<uint64_t> atomic_u64_t;
 // Shorthand for loading value from atomic counters
 static inline uint64_t operator *(atomic_u64_t& value) {
     return value.load(std::memory_order_relaxed);
+}
+
+static constexpr int ilog2(int x) {
+    return sizeof(int) * 8 - 1 - __builtin_clz(x);
+}
+
 }
 
 #endif // TLBSIM_UTIL_H
