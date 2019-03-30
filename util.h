@@ -29,6 +29,8 @@ static inline uint64_t operator *(atomic_u64_t& value) {
     return value.load(std::memory_order_relaxed);
 }
 
+double get_cputime() noexcept;
+
 static constexpr int ilog2(int x) {
     return sizeof(int) * 8 - 1 - __builtin_clz(x);
 }
