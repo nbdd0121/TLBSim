@@ -68,8 +68,11 @@ class TLB {
 public:
     TLB* parent;
     tlb_stats_t* stats;
+    // Associated hart ID. Only used for L1 cache to enforce L0 inclusion policy.
+    // -1 should be used for non-L1 caches.
+    int hartid;
 
-    TLB(TLB* parent, tlb_stats_t* stats): parent{parent}, stats{stats} {}
+    TLB(TLB* parent, tlb_stats_t* stats, int hartid): parent{parent}, stats{stats}, hartid{hartid} {}
 
     // Find an entry, and acquire a (possibly) fine-grained lock that prevents
     // any race to the entry.
@@ -91,9 +94,9 @@ public:
     }
 };
 
-extern class Page_walker final: public TLB {
+extern class PageWalker final: public TLB {
 public:
-    Page_walker(): TLB(nullptr, nullptr) {}
+    PageWalker(): TLB(nullptr, nullptr, -1) {}
     int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
     void flush(int asid, uint64_t vpn) override {}
 } page_walker;
