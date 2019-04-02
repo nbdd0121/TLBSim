@@ -113,6 +113,22 @@ private:
     };
     DynArray<set_t> maps;
     int idx_bits;
+private:
+    inline size_t index(int asid, uint64_t vpn) const {
+        // Due to the existence of global pages, we either need to treat them differently, or
+        // we cannot use ASID bits in set index. As we mostly use an associativity of 8, and we
+        // usually have no more than 8 cores, this choice shouldn't be too bad.
+        // Of course a separate global/non-global page TLB can be easily implemented with our
+        // framework.
+
+        // We would like to also include realm id in calculation.
+        // We assume bits of realm id are equally important and least significant bits are used
+        // first.
+        size_t realm = bswap32(asid >> 16) >> (32 - idx_bits);
+        size_t set_index = (vpn & ((1 << idx_bits) - 1)) ^ realm;
+        return set_index;
+    }
+
 public:
     SetAssocTLB(TLB* parent, tlb_stats_t* stats, int hartid, size_t size, int associativity):
         TLB(parent, stats, hartid), maps(size / associativity, set_t(associativity)) {
@@ -121,20 +137,20 @@ public:
     }
 
     bool find_and_lock(tlb_entry_t& search) override {
-        size_t set_index = (search.vpn ^ (search.asid >> 16 << (idx_bits - 3))) & ((1 << idx_bits) - 1);
+        size_t set_index = index(search.asid, search.vpn);
         auto& set = maps[set_index];
         set.lock.lock();
         return set.set.find(search);
     }
 
     void unlock(const tlb_entry_t& entry) override {
-        size_t set_index = (entry.vpn ^ (entry.asid >> 16 << (idx_bits - 3))) & ((1 << idx_bits) - 1);
+        size_t set_index = index(entry.asid, entry.vpn);
         auto& set = maps[set_index];
         set.lock.unlock();
     }
 
     void insert_and_unlock(const tlb_entry_t& insert) override {
-        size_t set_index = (insert.vpn ^ (insert.asid >> 16 << (idx_bits - 3))) & ((1 << idx_bits) - 1);
+        size_t set_index = index(insert.asid, insert.vpn);
         auto& set = maps[set_index];
         set.set.insert(insert, *this);
         set.lock.unlock();
@@ -149,7 +165,7 @@ public:
                 set.lock.unlock();
             }
         } else {
-            size_t set_index = (vpn ^ (asid >> 16 << (idx_bits - 3))) & ((1 << idx_bits) - 1);
+            size_t set_index = index(asid, vpn);
             auto& set = maps[set_index];
             set.lock.lock();
             set.set.flush(asid, vpn, num_flush);

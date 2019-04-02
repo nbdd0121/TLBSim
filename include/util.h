@@ -35,6 +35,10 @@ static constexpr int ilog2(int x) {
     return sizeof(int) * 8 - 1 - __builtin_clz(x);
 }
 
+static constexpr uint32_t bswap32(uint32_t value) {
+    return __builtin_bswap32(value);
+}
+
 }
 
 #endif // TLBSIM_UTIL_H
