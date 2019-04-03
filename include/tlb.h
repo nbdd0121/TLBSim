@@ -11,6 +11,27 @@
 
 namespace tlbsim {
 
+// Represent a packed structure of realm ID + ASID.
+// In the future this may be expanded to 64-bits to include VMID.
+struct asid_t {
+    // Bit  31    : global indication
+    // Bit  30    : Always 0
+    // Bits 29..16: isolation ID (realms), 14 bits
+    // Bits 15..0 : ASID, 16 bits
+    int32_t _value;
+
+    // Castable from/to int32_t
+    asid_t(int32_t asid) noexcept : _value{asid} {};
+    constexpr operator int32_t() const noexcept { return _value; }
+
+    constexpr bool invalid() const noexcept { return _value == -1; }
+    constexpr bool valid() const noexcept { return _value != -1; }
+
+    constexpr bool global() const noexcept { return _value < 0; }
+    constexpr int realm() const noexcept { return (_value >> 16) & 0x3fff; }
+    constexpr int asid() const noexcept { return _value & 0xffff; }
+};
+
 // Represent an TLB entry.
 // This is the internally-used exchange formats between all different types of TLB.
 struct tlb_entry_t {
@@ -19,11 +40,11 @@ struct tlb_entry_t {
     uint64_t pte;
     // -1 indicates this TLB entry is not valid
     // When not -1, bits (..16) are isolation ID (realms) and bits (15..0) are ASID.
-    int asid = -1;
+    asid_t asid = -1;
     int granularity;
 
     bool valid() const noexcept {
-        return asid != -1;
+        return asid.valid();
     }
 
     void invalidate() noexcept {
@@ -31,25 +52,25 @@ struct tlb_entry_t {
     }
 
     // Check whether an ASID match
-    bool asid_match(int asid) const noexcept {
+    bool asid_match(asid_t asid) const noexcept {
         // In different realm
-        if ((this->asid &~ 0xffff) != (asid &~ 0xffff)) return false;
+        if (this->asid.realm() != asid.realm()) return false;
         // Global page always match
         if (this->pte & PTE_G) return true;
         // Otherwise need ASID match
-        return (this->asid & 0xffff) == (asid & 0xffff);
+        return this->asid.asid() == asid.asid();
     }
 
     // Check whether an ASID match when flushing
-    bool asid_match_flush(int asid) const noexcept {
+    bool asid_match_flush(asid_t asid) const noexcept {
         // In different realm
-        if ((this->asid &~ 0xffff) != (asid &~ 0xffff)) return false;
+        if (this->asid.realm() != asid.realm()) return false;
         // Want global flush
-        if ((asid & 0xffff) == 0) return true;
+        if (asid.asid() == 0) return true;
         // Global page never flushes if not global flush
         if (this->pte & PTE_G) return false;
         // Otherwise need ASID match
-        return (this->asid & 0xffff) == (asid & 0xffff);
+        return this->asid.asid() == asid.asid();
     }
 };
 
@@ -84,11 +105,11 @@ public:
     // Insert an entry, and unlock.
     virtual void insert_and_unlock(const tlb_entry_t &entry) {}
 
-    virtual void flush_local(int asid, uint64_t vpn) {}
+    virtual void flush_local(asid_t asid, uint64_t vpn) {}
 
     virtual int access(tlb_entry_t &search, const tlbsim_req_t& req);
 
-    virtual void flush(int asid, uint64_t vpn) {
+    virtual void flush(asid_t asid, uint64_t vpn) {
         flush_local(asid, vpn);
         parent->flush(asid, vpn);
     }
@@ -98,7 +119,7 @@ extern class PageWalker final: public TLB {
 public:
     PageWalker(): TLB(nullptr, nullptr, -1) {}
     int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
-    void flush(int asid, uint64_t vpn) override {}
+    void flush(asid_t asid, uint64_t vpn) override {}
 } page_walker;
 
 }

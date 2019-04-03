@@ -53,7 +53,7 @@ public:
         lock.unlock();
     }
 
-    void flush_local(int asid, uint64_t vpn) override {
+    void flush_local(asid_t asid, uint64_t vpn) override {
         lock.lock();
         uint64_t num_flush = 0;
         if (vpn == 0) {
