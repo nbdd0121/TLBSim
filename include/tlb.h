@@ -28,8 +28,47 @@ struct asid_t {
     constexpr bool valid() const noexcept { return _value != -1; }
 
     constexpr bool global() const noexcept { return _value < 0; }
+    void global(bool set) noexcept {
+        _value = (_value & 0x7fffffff) | ((int32_t)set << 31);
+    }
+
     constexpr int realm() const noexcept { return (_value >> 16) & 0x3fff; }
+    void realm(int set) noexcept {
+        _value = (_value & 0xc000ffff) | ((set & 0x3fff) << 16);
+    }
+
     constexpr int asid() const noexcept { return _value & 0xffff; }
+    void asid(int asid) noexcept {
+        _value = (_value & 0xffff0000) | (asid & 0xffff);
+    }
+
+    constexpr int realm_asid() const noexcept { return _value & 0x7fffffff; }
+
+    // Check if ASID matches in lookup.
+    // this  : entry in TLB
+    // search: entry to match
+    bool match(asid_t search) const noexcept {
+        // In different realm
+        if (realm() != search.realm()) return false;
+        // Global page always match
+        if (global()) return true;
+        // Otherwise need ASID match
+        return asid() == search.asid();
+    }
+
+    // Check if ASID matches when flushing.
+    // this : entry in TLB
+    // flush: entry to flush
+    bool match_flush(asid_t flush) const noexcept {
+        // In different realm
+        if (realm() != flush.realm()) return false;
+        // Want global flush
+        if (flush.global()) return true;
+        // Global page never flushes if not global flush
+        if (global()) return false;
+        // Otherwise need ASID match
+        return asid() == flush.asid();
+    }
 };
 
 // Represent an TLB entry.
@@ -49,28 +88,6 @@ struct tlb_entry_t {
 
     void invalidate() noexcept {
         asid = -1;
-    }
-
-    // Check whether an ASID match
-    bool asid_match(asid_t asid) const noexcept {
-        // In different realm
-        if (this->asid.realm() != asid.realm()) return false;
-        // Global page always match
-        if (this->pte & PTE_G) return true;
-        // Otherwise need ASID match
-        return this->asid.asid() == asid.asid();
-    }
-
-    // Check whether an ASID match when flushing
-    bool asid_match_flush(asid_t asid) const noexcept {
-        // In different realm
-        if (this->asid.realm() != asid.realm()) return false;
-        // Want global flush
-        if (asid.asid() == 0) return true;
-        // Global page never flushes if not global flush
-        if (this->pte & PTE_G) return false;
-        // Otherwise need ASID match
-        return this->asid.asid() == asid.asid();
     }
 };
 

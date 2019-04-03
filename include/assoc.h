@@ -31,9 +31,8 @@ struct FIFOSet {
                 continue;
             }
             if (entry.vpn != search.vpn) continue;
-            if (!entry.asid_match(search.asid)) continue;
-            search.ppn = entry.ppn;
-            search.pte = entry.pte;
+            if (!entry.asid.match(search.asid)) continue;
+            search = entry;
             insert_ptr = i;
             return true;
         }
@@ -64,7 +63,7 @@ struct FIFOSet {
         for (auto& entry: entries) {
             if (!entry.valid()) continue;
             if (vpn != 0 && entry.vpn != vpn) continue;
-            if (!entry.asid_match_flush(asid)) continue;
+            if (!entry.asid.match_flush(asid)) continue;
             entry.invalidate();
             num_flush++;
         }
@@ -114,7 +113,7 @@ private:
     DynArray<set_t> maps;
     int idx_bits;
 private:
-    inline size_t index(int asid, uint64_t vpn) const {
+    inline size_t index(asid_t asid, uint64_t vpn) const {
         // Due to the existence of global pages, we either need to treat them differently, or
         // we cannot use ASID bits in set index. As we mostly use an associativity of 8, and we
         // usually have no more than 8 cores, this choice shouldn't be too bad.
@@ -124,7 +123,7 @@ private:
         // We would like to also include realm id in calculation.
         // We assume bits of realm id are equally important and least significant bits are used
         // first.
-        size_t realm = bswap32(asid >> 16) >> (32 - idx_bits);
+        size_t realm = bswap32(asid.realm()) >> (32 - idx_bits);
         size_t set_index = (vpn & ((1 << idx_bits) - 1)) ^ realm;
         return set_index;
     }

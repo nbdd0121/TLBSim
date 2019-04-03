@@ -23,17 +23,15 @@ public:
     IdealTLB(TLB* parent, tlb_stats_t* stats): TLB(parent, stats, -1) {}
     bool find_and_lock(tlb_entry_t& search) override {
         lock.lock();
-        uint64_t key = (search.vpn << 24) | search.asid;
+        uint64_t key = (search.vpn << 24) | search.asid.realm_asid();
         auto iter = g_map.find(key &~ 0xffff);
         if (iter != g_map.end()) {
-            search.ppn = iter->second.ppn;
-            search.pte = iter->second.pte;
+            search = iter->second;
             return true;
         }
         auto iter2 = map.find(key);
         if (iter2 != map.end()) {
-            search.ppn = iter2->second.ppn;
-            search.pte = iter2->second.pte;
+            search = iter2->second;
             return true;
         }
         return false;
@@ -44,8 +42,8 @@ public:
     }
 
     void insert_and_unlock(const tlb_entry_t& insert) override {
-        uint64_t key = (insert.vpn << 24) | insert.asid;
-        if (insert.pte & PTE_G) {
+        uint64_t key = (insert.vpn << 24) | insert.asid.realm_asid();
+        if (insert.asid.global()) {
             g_map[key &~ 0xffff] = insert;
         } else {
             map[key] = insert;
@@ -57,9 +55,9 @@ public:
         lock.lock();
         uint64_t num_flush = 0;
         if (vpn == 0) {
-            if (asid == -1) {
+            if (asid.global()) {
                 for (auto iter = g_map.begin(); iter != g_map.end(); ) {
-                    if ((iter->second.asid &~ 0xffff) == (asid &~ 0xffff)) {
+                    if (iter->second.asid.realm() == asid.realm()) {
                         num_flush++;
                         iter = g_map.erase(iter);
                     } else {
@@ -68,7 +66,7 @@ public:
                 }
             }
             for (auto iter = map.begin(); iter != map.end(); ) {
-                if ((iter->second.asid &~ 0xffff) == (asid &~ 0xffff)) {
+                if (iter->second.asid.realm() == asid.realm()) {
                     num_flush++;
                     iter = map.erase(iter);
                 } else {
@@ -76,8 +74,8 @@ public:
                 }
             }
         } else {
-            uint64_t key = (vpn << 24) | asid;
-            if (asid == -1) {
+            uint64_t key = (vpn << 24) | asid.realm_asid();
+            if (asid.global()) {
                 key &=~ 0xffff;
                 auto iter = g_map.find(key);
                 if (iter != g_map.end()) {

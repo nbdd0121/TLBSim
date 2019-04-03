@@ -62,7 +62,6 @@ int PageWalker::access(tlb_entry_t& search, const tlbsim_req_t& req) {
     }
 
     uint64_t ppn = req.satp & SATP_PPN;
-    int pte_mask = 0;
 
     for (int i = 0, bits_left = vpn_bits - 9; i < levels; i++, bits_left -= 9) {
         uint64_t index = (vpn >> bits_left) & 0x1ff;
@@ -72,17 +71,16 @@ int PageWalker::access(tlb_entry_t& search, const tlbsim_req_t& req) {
 
         // Check for invalid PTE
         if (!(pte & PTE_V)) goto invalid;
-        
-        // Not leaf yet
-        if (!(pte & (PTE_R | PTE_W | PTE_X))) {
-            // A global PTE will cause level to be considered as PTE as well.
-            if ((pte & PTE_G)) pte_mask |= PTE_G;
-            continue;
-        }
-        
+
         // Check for malformed PTEs
         if ((pte & (PTE_R | PTE_W | PTE_X)) == PTE_W) goto invalid;
         if ((pte & (PTE_R | PTE_W | PTE_X)) == (PTE_W | PTE_X)) goto invalid;
+
+        // A global bit will cause the page to be global regardless if this is leaf.
+        if ((pte & PTE_G)) search.asid.global(true);
+
+        // Not leaf yet
+        if (!(pte & (PTE_R | PTE_W | PTE_X))) continue;
 
         // Check for misaligned huge page
         if (ppn & ((1ULL << bits_left) - 1)) goto invalid;
@@ -97,7 +95,7 @@ int PageWalker::access(tlb_entry_t& search, const tlbsim_req_t& req) {
 
         // PPN is always filled as if this is a 4K page.
         search.ppn = ppn | (vpn & ((1L << bits_left) - 1));
-        search.pte = pte | pte_mask;
+        search.pte = pte;
         search.granularity = levels - 1 - i;
         return perm;
     }
