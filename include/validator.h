@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include "tlb.h"
 #include "util.h"
+#include "ideal.h"
 
 namespace tlbsim {
 
@@ -25,6 +26,15 @@ public:
     int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
 
     void flush_local(asid_t asid, uint64_t vpn) override;
+};
+
+
+class TLBValidator: public IdealTLB {
+public:
+    TLBValidator(TLB* parent, tlb_stats_t* stats): IdealTLB(parent, stats) {
+    }
+
+    int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
 };
 
 }
