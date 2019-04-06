@@ -18,10 +18,14 @@ namespace tlbsim {
 class ASIDValidator: public TLB {
 private:
     std::unordered_map<int, uint64_t> nonzero_asids;
+    // The reverse mapping to nonzero_asids.
+    // This mapping exists as we would like to enforce the property between ASIDs and address
+    // spaces managed by the OS to be partial bijective.
+    std::unordered_map<uint64_t, int> asid_revmap;
     uint64_t zero_asids[32] {};
     Spinlock lock;
 public:
-    ASIDValidator(TLB* parent): TLB(parent, NULL, -1) {}
+    ASIDValidator(TLB* parent, bool reverse): TLB(parent, NULL, -1) {}
     
     int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
 

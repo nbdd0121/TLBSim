@@ -16,6 +16,11 @@ static inline int satp_asid(uint64_t satp) {
     return (satp >> 44) & 0xffff;
 }
 
+// SATP without ASID.
+static inline uint64_t satp_mask(uint64_t satp) {
+    return satp &~ (0xffffULL << 44);
+}
+
 // Check if two SATPs are consistent.
 static inline bool consistent_satp(uint64_t a, uint64_t b) {
     // All fields other than ASID are required to be the same.
@@ -40,6 +45,7 @@ int ASIDValidator::access(tlb_entry_t &search, const tlbsim_req_t& req) {
                     req.hartid, req.satp, iter->first, test
                 );
                 // Erase the item to avoid duplicate errors.
+                asid_revmap.erase(satp_mask(iter->second));
                 iter = nonzero_asids.erase(iter);
             } else {
                 ++iter;
@@ -63,6 +69,8 @@ int ASIDValidator::access(tlb_entry_t &search, const tlbsim_req_t& req) {
                 COLOR_ERR "ASIDValidator: ASID %d reused (old=%lx, new=%lx) without flushing\n" COLOR_RST,
                 asid, test, satp
             );
+            // Make the reverse map validator happy.
+            test = 0;
         }
         for (int i = 0; i < 32; i++) {
             uint64_t test = zero_asids[i];
@@ -77,6 +85,23 @@ int ASIDValidator::access(tlb_entry_t &search, const tlbsim_req_t& req) {
             }
         }
         ptr = satp;
+
+        // It is a legit scenario that an ASID is no longer used, and the page containing its
+        // root page table is re-used for another ASID instead.
+        // If this is a fresh access of this ASID, then when we detect conflict, we will assume
+        // that the old ASID associated with the SATP is no longer used. In this case no
+        // warnings will be reported.
+        // If this is not a fresh access and we detect conflict, then it means that both ASIDs
+        // are in use, and we will report the issue.
+        auto &rev_ptr = asid_revmap[satp_mask(satp)];
+        if (test && rev_ptr != asid) {
+            fprintf(
+                stderr,
+                COLOR_ERR "ASIDValidator: %lx is assigned to ASID %d while ASID %d can still be used\n" COLOR_RST,
+                satp, asid, rev_ptr
+            );
+        }
+        rev_ptr = asid;
     }
 
     lock.unlock();
@@ -94,6 +119,7 @@ void ASIDValidator::flush_local(asid_t asid, uint64_t vpn) {
             zero_asids[i] = 0;
         }
         nonzero_asids.clear();
+        asid_revmap.clear();
     } else {
         // We expect realm to be 0.
         if (asid < 32) {
@@ -102,7 +128,12 @@ void ASIDValidator::flush_local(asid_t asid, uint64_t vpn) {
             // TLB interface, so just be conservative.
             zero_asids[asid] = 0;
         }
-        nonzero_asids.erase(asid);
+        auto iter = nonzero_asids.find(asid);
+        if (iter != nonzero_asids.end()) {
+            asid_revmap.erase(satp_mask(iter->second));
+            // asid_revmap.clear();
+            nonzero_asids.erase(iter);
+        }
     }
     lock.unlock();
 }
@@ -134,7 +165,7 @@ hit:
             // No flush after making page invalid
             fprintf(
                 stderr,
-                COLOR_ERR "TLBValidator: Page invalidated without flush (old ppn=%lx, asid=%x, vpn=%lx)\n" COLOR_RST,
+                COLOR_ERR "TLBValidator: Page invalidated without flush (old ppn=%lx, asid=%d, vpn=%lx)\n" COLOR_RST,
                 search.ppn, satp_asid(req.satp), req.vpn
             );
         }
@@ -143,7 +174,7 @@ hit:
         // invalid page.
         fprintf(
             stderr,
-            COLOR_ERR "TLBValidator: PPN changed without flush (old ppn=%lx, new ppn=%lx, asid=%x, vpn=%lx)\n" COLOR_RST,
+            COLOR_ERR "TLBValidator: PPN changed without flush (old ppn=%lx, new ppn=%lx, asid=%d, vpn=%lx)\n" COLOR_RST,
             search.ppn, dup.ppn, satp_asid(req.satp), req.vpn
         );
     } else {
@@ -154,7 +185,7 @@ hit:
             // If permission is revoked.
             fprintf(
                 stderr,
-                COLOR_ERR "TLBValidator: Page permission reduced without flush (old pte=%lx, new pte=%lx, asid=%x, vpn=%lx)\n" COLOR_RST,
+                COLOR_ERR "TLBValidator: Page permission reduced without flush (old pte=%lx, new pte=%lx, asid=%d, vpn=%lx)\n" COLOR_RST,
                 search.pte, dup.pte, satp_asid(req.satp), req.vpn
             );
         }
