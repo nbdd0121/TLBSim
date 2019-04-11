@@ -19,7 +19,11 @@ struct FIFOSet {
     int ptr = 0;
     int insert_ptr = 0;
 
-    FIFOSet(int size): entries(size) {}
+    FIFOSet(int size): entries(size) {
+        for (auto& entry: entries) {
+            entry.invalidate();
+        }
+    }
 
     bool find(tlb_entry_t& search) {
         insert_ptr = -1;

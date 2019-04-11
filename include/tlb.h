@@ -20,6 +20,7 @@ struct asid_t {
     // Bits 15..0 : ASID, 16 bits
     int32_t _value;
 
+    asid_t() = default;
     // Castable from/to int32_t
     asid_t(int32_t asid) noexcept : _value{asid} {};
     constexpr operator int32_t() const noexcept { return _value; }
@@ -79,7 +80,7 @@ struct tlb_entry_t {
     uint64_t pte;
     // -1 indicates this TLB entry is not valid
     // When not -1, bits (..16) are isolation ID (realms) and bits (15..0) are ASID.
-    asid_t asid = -1;
+    asid_t asid;
     int granularity;
 
     bool valid() const noexcept {
