@@ -10,7 +10,10 @@
 #ifndef TLBSIM_IDEAL_H
 #define TLBSIM_IDEAL_H
 
+#include <unordered_map>
+
 #include "tlb.h"
+#include "util.h"
 
 namespace tlbsim {
 

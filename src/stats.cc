@@ -30,6 +30,10 @@ atomic_u64_t flush_gpage;
 atomic_u64_t flush_asid;
 atomic_u64_t flush_page;
 
+tlb_stats_t itlb_stats;
+tlb_stats_t dtlb_stats;
+tlb_stats_t stlb_stats;
+
 void print_instrets() {
     fprintf(stderr, "Total instructions : %ld\n", tlbsim_instret);
     fprintf(stderr, "Memory Instructions: %ld\n", tlbsim_minstret);

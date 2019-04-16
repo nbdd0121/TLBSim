@@ -41,6 +41,10 @@ struct tlb_stats_t {
     void print(const char* name);
 };
 
+extern tlb_stats_t itlb_stats;
+extern tlb_stats_t dtlb_stats;
+extern tlb_stats_t stlb_stats;
+
 void print_instrets();
 void print_faults();
 void print_flushes();

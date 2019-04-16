@@ -25,7 +25,7 @@ private:
     uint64_t zero_asids[32] {};
     Spinlock lock;
 public:
-    ASIDValidator(TLB* parent, bool reverse): TLB(parent, NULL, -1) {}
+    ASIDValidator(TLB* parent): TLB(parent, NULL, -1) {}
     
     int access(tlb_entry_t &search, const tlbsim_req_t& req) override;
 
