@@ -8,6 +8,9 @@
 
 namespace tlbsim {
 
+class TLB;
+class LogReplayer;
+
 //
 // Global configurations
 //
@@ -17,6 +20,14 @@ extern bool config_cache_inv;
 
 // Whether a non-accessed or dirty PTE should be updated or faulted.
 extern bool config_update_pte;
+
+// Globally shared TLBs
+extern TLB* config_stlb;
+extern TLB* config_itlbs[32];
+extern TLB* config_dtlbs[32];
+extern LogReplayer* config_replayer;
+
+void setup_private_tlb(int hartid);
 
 }
 
