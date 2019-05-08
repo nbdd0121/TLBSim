@@ -10,6 +10,7 @@
 #define TLBSIM_ASSOC_H
 
 #include "tlb.h"
+#include "stats.h"
 #include "dyn_array.h"
 #include "dyn_bitset.h"
 
