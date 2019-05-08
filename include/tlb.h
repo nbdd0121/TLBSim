@@ -25,9 +25,6 @@ struct asid_t {
     asid_t(int32_t asid) noexcept : _value{asid} {};
     constexpr operator int32_t() const noexcept { return _value; }
 
-    constexpr bool invalid() const noexcept { return _value == -1; }
-    constexpr bool valid() const noexcept { return _value != -1; }
-
     constexpr bool global() const noexcept { return _value < 0; }
     void global(bool set) noexcept {
         _value = (_value & 0x7fffffff) | ((int32_t)set << 31);
@@ -78,18 +75,8 @@ struct tlb_entry_t {
     uint64_t vpn;
     uint64_t ppn;
     uint64_t pte;
-    // -1 indicates this TLB entry is not valid
-    // When not -1, bits (..16) are isolation ID (realms) and bits (15..0) are ASID.
     asid_t asid;
     int granularity;
-
-    bool valid() const noexcept {
-        return asid.valid();
-    }
-
-    void invalidate() noexcept {
-        asid = -1;
-    }
 };
 
 /*

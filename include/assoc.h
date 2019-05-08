@@ -11,29 +11,27 @@
 
 #include "tlb.h"
 #include "dyn_array.h"
+#include "dyn_bitset.h"
 
 namespace tlbsim {
 
 struct FIFOSet {
     DynArray<tlb_entry_t> entries;
+    DynBitset valid;
     int ptr = 0;
     int insert_ptr = 0;
 
-    FIFOSet(int size): entries(size) {
-        for (auto& entry: entries) {
-            entry.invalidate();
-        }
-    }
+    FIFOSet(int size): entries(size), valid(size) {}
 
     bool find(tlb_entry_t& search) {
         insert_ptr = -1;
         int associativity = entries.size();
         for (int i = 0; i < associativity; i++) {
-            auto& entry = entries[i];
-            if (!entry.valid()) {
+            if (!valid[i]) {
                 if (insert_ptr == -1) insert_ptr = i;
                 continue;
             }
+            auto& entry = entries[i];
             if (entry.vpn != search.vpn) continue;
             if (!entry.asid.match(search.asid)) continue;
             search = entry;
@@ -53,7 +51,7 @@ struct FIFOSet {
         }
 
         auto& entry = entries[insert_ptr];
-        if (entry.valid()) {
+        if (valid[insert_ptr]) {
             ++tlb.stats->evict;
             if (tlb.hartid != -1) {
                 tlbsim_client.invalidate_l0(&tlbsim_client, tlb.hartid, entry.vpn);
@@ -61,14 +59,17 @@ struct FIFOSet {
         }
 
         entry = insert;
+        valid[insert_ptr] = true;
     }
 
     void flush(int asid, uint64_t vpn, uint64_t& num_flush) {
-        for (auto& entry: entries) {
-            if (!entry.valid()) continue;
+        int associativity = entries.size();
+        for (int i = 0; i < associativity; i++) {
+            if (!valid[i]) continue;
+            auto& entry = entries[i];
             if (vpn != 0 && entry.vpn != vpn) continue;
             if (!entry.asid.match_flush(asid)) continue;
-            entry.invalidate();
+            valid[i] = false;
             num_flush++;
         }
     }
