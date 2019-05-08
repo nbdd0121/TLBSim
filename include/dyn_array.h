@@ -74,6 +74,7 @@ public:
         for (size_t i = 0; i < _size; i++) {
             _begin[i] = other._begin[i];
         }
+        return *this;
     }
 
     DynArray& operator =(DynArray&& other) {
