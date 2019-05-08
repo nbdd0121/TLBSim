@@ -15,15 +15,17 @@
 
 namespace tlbsim {
 
-struct FIFOSet {
-    DynArray<tlb_entry_t> entries;
+template<typename T>
+struct FIFOCache {
+    DynArray<T> entries;
     DynBitset valid;
     int ptr = 0;
     int insert_ptr = 0;
 
-    FIFOSet(int size): entries(size), valid(size) {}
+    FIFOCache(int size): entries(size), valid(size) {}
 
-    bool find(tlb_entry_t& search) {
+    template<typename Matcher>
+    bool find(T& result, Matcher matcher) {
         insert_ptr = -1;
         int associativity = entries.size();
         for (int i = 0; i < associativity; i++) {
@@ -32,9 +34,8 @@ struct FIFOSet {
                 continue;
             }
             auto& entry = entries[i];
-            if (entry.vpn != search.vpn) continue;
-            if (!entry.asid.match(search.asid)) continue;
-            search = entry;
+            if (!matcher(entry)) continue;
+            result = entry;
             insert_ptr = i;
             return true;
         }
@@ -44,7 +45,8 @@ struct FIFOSet {
         return false;
     }
 
-    void insert(const tlb_entry_t& insert, TLB& tlb) {
+    template<typename Evicter>
+    void insert(const T& insert, Evicter evicter) {
         if (ptr == insert_ptr) {
             int associativity = entries.size();
             ptr = ptr == associativity - 1 ? 0 : ptr + 1;
@@ -52,26 +54,55 @@ struct FIFOSet {
 
         auto& entry = entries[insert_ptr];
         if (valid[insert_ptr]) {
-            ++tlb.stats->evict;
-            if (tlb.hartid != -1) {
-                tlbsim_client.invalidate_l0(&tlbsim_client, tlb.hartid, entry.vpn);
-            }
+            evicter(entry);
         }
 
         entry = insert;
         valid[insert_ptr] = true;
     }
 
-    void flush(int asid, uint64_t vpn, uint64_t& num_flush) {
+    template<typename Matcher, typename Evicter>
+    void flush(Matcher matcher, Evicter evicter) {
         int associativity = entries.size();
         for (int i = 0; i < associativity; i++) {
             if (!valid[i]) continue;
             auto& entry = entries[i];
-            if (vpn != 0 && entry.vpn != vpn) continue;
-            if (!entry.asid.match_flush(asid)) continue;
+            if (!matcher(entry)) continue;
             valid[i] = false;
-            num_flush++;
+            evicter(entry);
         }
+    }
+};
+
+struct FIFOSet {
+    FIFOCache<tlb_entry_t> cache;
+    FIFOSet(int size): cache(size) {}
+
+    bool find(tlb_entry_t& search) {
+        return cache.find(search, [&](auto& entry) {
+            if (entry.vpn != search.vpn) return false;
+            if (!entry.asid.match(search.asid)) return false;
+            return true;
+        });
+    }
+
+    void insert(const tlb_entry_t& insert, TLB& tlb) {
+        cache.insert(insert, [&](auto& entry) {
+            ++tlb.stats->evict;
+            if (tlb.hartid != -1) {
+                tlbsim_client.invalidate_l0(&tlbsim_client, tlb.hartid, entry.vpn);
+            }
+        });
+    }
+
+    void flush(int asid, uint64_t vpn, uint64_t& num_flush) {
+        cache.flush([&](auto& entry) {
+            if (vpn != 0 && entry.vpn != vpn) return false;
+            if (!entry.asid.match_flush(asid)) return false;
+            return true;
+        }, [&](auto& entry) {
+            num_flush++;
+        });
     }
 };
 
