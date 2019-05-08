@@ -23,6 +23,7 @@ namespace tlbsim {
 bool config_cache_inv = false;
 bool config_update_pte = true;
 TLB* config_stlb;
+TLB* config_ctlbs[32];
 TLB* config_itlbs[32];
 TLB* config_dtlbs[32];
 LogReplayer* config_replayer;
@@ -205,6 +206,7 @@ void setup_private_tlb(int hartid) {
         dtlb = instantiate(dtlb_template[i], dtlb, &dtlb_stats, hartid, i == 0);
     }
 
+    config_ctlbs[hartid] = ctlb;
     config_itlbs[hartid] = itlb;
     config_dtlbs[hartid] = dtlb;
 }

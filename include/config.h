@@ -23,6 +23,7 @@ extern bool config_update_pte;
 
 // Globally shared TLBs
 extern TLB* config_stlb;
+extern TLB* config_ctlbs[32];
 extern TLB* config_itlbs[32];
 extern TLB* config_dtlbs[32];
 extern LogReplayer* config_replayer;
