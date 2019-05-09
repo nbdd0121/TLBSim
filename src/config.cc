@@ -191,16 +191,16 @@ void setup_private_tlb(int hartid) {
     TLB *ctlb = config_stlb;
     auto size = ctlb_template.size();
     for (int i = size - 1; i >= 0; i--) {
-        ctlb = instantiate(ctlb_template[i], ctlb, &stlb_stats, hartid, false);
+        ctlb = instantiate(ctlb_template[i], ctlb, &stlb_stats, hartid, itlb_template.empty() && dtlb_template.empty());
     }
 
-    TLB *itlb = config_stlb;
+    TLB *itlb = ctlb;
     size = itlb_template.size();
     for (int i = size - 1; i >= 0; i--) {
         itlb = instantiate(itlb_template[i], itlb, &itlb_stats, hartid, i == 0);
     }
 
-    TLB *dtlb = config_stlb;
+    TLB *dtlb = ctlb;
     size = dtlb_template.size();
     for (int i = size - 1; i >= 0; i--) {
         dtlb = instantiate(dtlb_template[i], dtlb, &dtlb_stats, hartid, i == 0);
