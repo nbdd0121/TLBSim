@@ -32,6 +32,7 @@ atomic_u64_t flush_page;
 
 tlb_stats_t itlb_stats;
 tlb_stats_t dtlb_stats;
+tlb_stats_t ctlb_stats;
 tlb_stats_t stlb_stats;
 
 void print_instrets() {

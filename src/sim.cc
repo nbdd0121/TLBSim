@@ -22,6 +22,7 @@ static void print_counters() {
     print_instrets();
     itlb_stats.print("I-TLB");
     dtlb_stats.print("D-TLB");
+    ctlb_stats.print("C-TLB");
     stlb_stats.print("S-TLB");
     print_faults();
     print_flushes();
@@ -34,6 +35,7 @@ static void reset_counters() {
     tlbsim_minstret = 0;
     itlb_stats.reset();
     dtlb_stats.reset();
+    ctlb_stats.reset();
     stlb_stats.reset();
 }
 

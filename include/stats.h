@@ -33,9 +33,9 @@ struct tlb_stats_t {
     atomic_u64_t flush;
 
     void reset() {
-        miss.store(0, std::memory_order_relaxed);
-        evict.store(0, std::memory_order_relaxed);
-        flush.store(0, std::memory_order_relaxed);
+        miss = 0;
+        evict = 0;
+        flush = 0;
     }
 
     void print(const char* name);
@@ -43,6 +43,7 @@ struct tlb_stats_t {
 
 extern tlb_stats_t itlb_stats;
 extern tlb_stats_t dtlb_stats;
+extern tlb_stats_t ctlb_stats;
 extern tlb_stats_t stlb_stats;
 
 void print_instrets();

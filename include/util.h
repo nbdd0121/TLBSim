@@ -22,12 +22,29 @@ public:
     }
 };
 
-typedef std::atomic<uint64_t> atomic_u64_t;
+struct atomic_u64_t {
+    std::atomic<uint64_t> counter;
 
-// Shorthand for loading value from atomic counters
-static inline uint64_t operator *(atomic_u64_t& value) {
-    return value.load(std::memory_order_relaxed);
-}
+    atomic_u64_t& operator =(uint64_t value) {
+        counter.store(value, std::memory_order_relaxed);
+        return *this;
+    }
+
+    atomic_u64_t& operator ++() noexcept {
+        counter.fetch_add(1, std::memory_order_relaxed);
+        return *this;
+    }
+
+    atomic_u64_t& operator +=(uint64_t value) noexcept {
+        counter.fetch_add(value, std::memory_order_relaxed);
+        return *this;
+    }
+
+    // Shorthand for loading value from it
+    uint64_t operator *() const noexcept {
+        return counter.load(std::memory_order_relaxed);
+    }
+};
 
 double get_cputime() noexcept;
 
