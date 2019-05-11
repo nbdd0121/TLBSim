@@ -26,7 +26,7 @@ struct FIFOCache {
     FIFOCache(int size): entries(size), valid(size) {}
 
     template<typename Matcher>
-    bool find(T& result, Matcher matcher) {
+    T* find(Matcher matcher) {
         insert_ptr = -1;
         int associativity = entries.size();
         for (int i = 0; i < associativity; i++) {
@@ -36,18 +36,17 @@ struct FIFOCache {
             }
             auto& entry = entries[i];
             if (!matcher(entry)) continue;
-            result = entry;
             insert_ptr = i;
-            return true;
+            return &entry;
         }
         if (insert_ptr == -1) {
             insert_ptr = ptr;
         }
-        return false;
+        return nullptr;
     }
 
     template<typename Evicter>
-    void insert(const T& insert, Evicter evicter) {
+    T* insert(const T& insert, Evicter evicter) {
         if (ptr == insert_ptr) {
             int associativity = entries.size();
             ptr = ptr == associativity - 1 ? 0 : ptr + 1;
@@ -60,17 +59,17 @@ struct FIFOCache {
 
         entry = insert;
         valid[insert_ptr] = true;
+        return &entry;
     }
 
-    template<typename Matcher, typename Evicter>
-    void flush(Matcher matcher, Evicter evicter) {
+    template<typename Filter>
+    void filter(Filter filter) {
         int associativity = entries.size();
         for (int i = 0; i < associativity; i++) {
             if (!valid[i]) continue;
             auto& entry = entries[i];
-            if (!matcher(entry)) continue;
+            if (!filter(entry)) continue;
             valid[i] = false;
-            evicter(entry);
         }
     }
 };
@@ -80,11 +79,14 @@ struct FIFOSet {
     FIFOSet(int size): cache(size) {}
 
     bool find(tlb_entry_t& search) {
-        return cache.find(search, [&](auto& entry) {
+        auto ptr = cache.find([&](auto& entry) {
             if (entry.vpn != search.vpn) return false;
             if (!entry.asid.match(search.asid)) return false;
             return true;
         });
+        if (!ptr) return false;
+        search = *ptr;
+        return true;
     }
 
     void insert(const tlb_entry_t& insert, TLB& tlb) {
@@ -97,12 +99,11 @@ struct FIFOSet {
     }
 
     void flush(int asid, uint64_t vpn, uint64_t& num_flush) {
-        cache.flush([&](auto& entry) {
+        cache.filter([&](auto& entry) {
             if (vpn != 0 && entry.vpn != vpn) return false;
             if (!entry.asid.match_flush(asid)) return false;
-            return true;
-        }, [&](auto& entry) {
             num_flush++;
+            return true;
         });
     }
 };
