@@ -17,8 +17,9 @@ typedef struct tlbsim_client_t {
     uint64_t (*phys_load)(struct tlbsim_client_t* self, uint64_t);
     // Update a machine word
     bool (*phys_cmpxchg)(struct tlbsim_client_t *self, uint64_t, uint64_t, uint64_t);
-    // Routine to invalidate L0 TLB to maintain inclusive property
-    void (*invalidate_l0)(struct tlbsim_client_t* self, int hartid, uint64_t vpn);
+    // Routine to invalidate L0 TLB to maintain inclusive property.
+    // Type 1 -> DTLB, 2 -> ITLB, 3 -> Both
+    void (*invalidate_l0)(struct tlbsim_client_t* self, int hartid, uint64_t vpn, int type);
 } tlbsim_client_t;
 
 // Provided by the client (user).

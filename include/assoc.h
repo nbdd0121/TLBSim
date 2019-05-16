@@ -93,7 +93,7 @@ struct FIFOSet {
         cache.insert(insert, [&](auto& entry) {
             ++tlb.stats->evict;
             if (tlb.hartid != -1) {
-                tlbsim_client.invalidate_l0(&tlbsim_client, tlb.hartid, entry.vpn);
+                tlbsim_client.invalidate_l0(&tlbsim_client, tlb.hartid, entry.vpn, 3);
             }
         });
     }
