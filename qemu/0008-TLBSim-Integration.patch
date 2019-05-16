@@ -1,0 +1,248 @@
+From 98c09f27ece853b368b0c4bb7ceb639d0d1c920f Mon Sep 17 00:00:00 2001
+From: Gary Guo <gary@garyguo.net>
+Date: Tue, 16 Apr 2019 15:24:50 +0100
+Subject: [PATCH 8/8] TLBSim: Integration
+
+---
+ configure                  |   4 ++
+ target/riscv/Makefile.objs |   5 ++
+ target/riscv/cpu.h         |   5 ++
+ target/riscv/cpu_helper.c  |   6 ++-
+ target/riscv/csr.c         |  10 ++++
+ target/riscv/op_helper.c   |   4 ++
+ target/riscv/tlb.c         | 106 +++++++++++++++++++++++++++++++++++++
+ 7 files changed, 139 insertions(+), 1 deletion(-)
+ create mode 100644 target/riscv/tlb.c
+
+diff --git a/configure b/configure
+index 8999698bc2..dca6a7605e 100755
+--- a/configure
++++ b/configure
+@@ -6260,6 +6260,10 @@ QEMU_CFLAGS="$pixman_cflags $fdt_cflags $QEMU_CFLAGS"
+ QEMU_LDFLAGS="$fdt_ldflags $QEMU_LDFLAGS"
+ libs_softmmu="$pixman_libs $libs_softmmu"
+ 
++QEMU_CFLAGS="$(pkg-config --cflags tlbsim) $QEMU_CFLAGS"
++QEMU_LDFLAGS="$(pkg-config --libs-only-L tlbsim) $QEMU_LDFLAGS"
++libs_softmmu="$(pkg-config --libs-only-l tlbsim) $libs_softmmu"
++
+ echo "Install prefix    $prefix"
+ echo "BIOS directory    $(eval echo $qemu_datadir)"
+ echo "firmware path     $(eval echo $firmwarepath)"
+diff --git a/target/riscv/Makefile.objs b/target/riscv/Makefile.objs
+index 9c6c109327..746f51080e 100644
+--- a/target/riscv/Makefile.objs
++++ b/target/riscv/Makefile.objs
+@@ -18,3 +18,8 @@ target/riscv/decode_insn16.inc.c: \
+ 
+ target/riscv/translate.o: target/riscv/decode_insn32.inc.c \
+ 	target/riscv/decode_insn16.inc.c
++
++ifeq ($(CONFIG_USER_ONLY),y)
++else
++obj-y += tlb.o
++endif
+diff --git a/target/riscv/cpu.h b/target/riscv/cpu.h
+index 7d6af6b4e7..8b0ec76a43 100644
+--- a/target/riscv/cpu.h
++++ b/target/riscv/cpu.h
+@@ -268,6 +268,11 @@ int riscv_cpu_handle_mmu_fault(CPUState *cpu, vaddr address, int size,
+ char *riscv_isa_string(RISCVCPU *cpu);
+ void riscv_cpu_list(void);
+ 
++#ifndef CONFIG_USER_ONLY
++int riscv_tlb_access(CPURISCVState* env, hwaddr *physical, int *prot,
++        target_ulong addr, int access_type, int mmu_idx);
++#endif
++
+ #define cpu_signal_handler riscv_cpu_signal_handler
+ #define cpu_list riscv_cpu_list
+ #define cpu_mmu_index riscv_cpu_mmu_index
+diff --git a/target/riscv/cpu_helper.c b/target/riscv/cpu_helper.c
+index 53f1795377..882623eb86 100644
+--- a/target/riscv/cpu_helper.c
++++ b/target/riscv/cpu_helper.c
+@@ -419,7 +419,11 @@ int riscv_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int size,
+              %d\n", __func__, env->pc, address, rw, mmu_idx);
+ 
+ #if !defined(CONFIG_USER_ONLY)
+-    ret = get_physical_address(env, &pa, &prot, address, rw, mmu_idx);
++    if (env->priv_ver >= PRIV_VERSION_1_10_0) {
++        ret = riscv_tlb_access(env, &pa, &prot, address, rw, mmu_idx);
++    } else {
++        ret = get_physical_address(env, &pa, &prot, address, rw, mmu_idx);
++    }
+     qemu_log_mask(CPU_LOG_MMU,
+             "%s address=%" VADDR_PRIx " ret %d physical " TARGET_FMT_plx
+              " prot %d\n", __func__, address, ret, pa, prot);
+diff --git a/target/riscv/csr.c b/target/riscv/csr.c
+index b6ca23cbc7..ed036a95b2 100644
+--- a/target/riscv/csr.c
++++ b/target/riscv/csr.c
+@@ -23,6 +23,8 @@
+ #include "qemu/main-loop.h"
+ #include "exec/exec-all.h"
+ 
++#include <tlbsim.h>
++
+ /* CSR function table */
+ static riscv_csr_operations csr_ops[];
+ 
+@@ -689,6 +691,12 @@ static int rmw_sip(CPURISCVState *env, int csrno, target_ulong *ret_value,
+                    write_mask & env->mideleg);
+ }
+ 
++static int write_tlb(CPURISCVState *env, int csrno, target_ulong val)
++{
++    tlbsim_reset_counters(val);
++    return 0;
++}
++
+ /* Supervisor Protection and Translation */
+ static int read_satp(CPURISCVState *env, int csrno, target_ulong *val)
+ {
+@@ -926,5 +934,7 @@ static riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
+     [CSR_HPMCOUNTER3H  ... CSR_HPMCOUNTER31H] =   { ctr,  read_zero          },
+     [CSR_MHPMCOUNTER3H ... CSR_MHPMCOUNTER31H] =  { any,  read_zero          },
+ #endif
++
++    [0x800] = { any, read_zero, write_tlb },
+ #endif /* !CONFIG_USER_ONLY */
+ };
+diff --git a/target/riscv/op_helper.c b/target/riscv/op_helper.c
+index 4e2c6a2e0c..37330017a4 100644
+--- a/target/riscv/op_helper.c
++++ b/target/riscv/op_helper.c
+@@ -23,6 +23,7 @@
+ #include "qemu/main-loop.h"
+ #include "exec/exec-all.h"
+ #include "exec/helper-proto.h"
++#include <tlbsim.h>
+ 
+ /* Exceptions processing helpers */
+ void QEMU_NORETURN riscv_raise_exception(CPURISCVState *env,
+@@ -155,6 +156,9 @@ void helper_tlb_flush(CPURISCVState *env, target_ulong asid, target_ulong vaddr)
+         } else {
+             tlb_flush_page(cs, vaddr & TARGET_PAGE_MASK);
+         }
++        if (env->priv_ver >= PRIV_VERSION_1_10_0) {
++            tlbsim_flush(env->mhartid, asid, vaddr >> PGSHIFT);
++        }
+     }
+ }
+ 
+diff --git a/target/riscv/tlb.c b/target/riscv/tlb.c
+new file mode 100644
+index 0000000000..f7c77f95f6
+--- /dev/null
++++ b/target/riscv/tlb.c
+@@ -0,0 +1,106 @@
++#include "qemu/osdep.h"
++#include "qemu/log.h"
++#include "cpu.h"
++#include "exec/exec-all.h"
++#include "tcg-op.h"
++
++#include <tlbsim.h>
++
++///
++/// TLB infrastracture
++///
++
++static uint64_t phys_load(tlbsim_client_t *self, uint64_t address) {
++    return ldq_phys(current_cpu->as, address);
++}
++
++static bool phys_cmpxchg(tlbsim_client_t *self, uint64_t address, uint64_t old, uint64_t new) {
++    MemoryRegion *mr;
++    hwaddr l = sizeof(target_ulong), addr1;
++    mr = address_space_translate(current_cpu->as, address,
++        &addr1, &l, false, MEMTXATTRS_UNSPECIFIED);
++    if (memory_region_is_ram(mr)) {
++        target_ulong *pa =
++            qemu_map_ram_ptr(mr->ram_block, addr1);
++        target_ulong result = atomic_cmpxchg(pa, old, new);
++        if (result != old) {
++            return false;
++        }
++        return true;
++    } else {
++        /* ROM (AD bits are not preset) or in IO space */
++        return false;
++    }
++}
++
++static void invalidate_l0(tlbsim_client_t *self, int hartid, uint64_t vpn, int type) {
++    CPUState *cpu;
++    if (RISCV_CPU(current_cpu)->env.mhartid == hartid) {
++        cpu = current_cpu;
++    } else {
++        CPU_FOREACH(cpu) {
++            if (RISCV_CPU(cpu)->env.mhartid == hartid) break;
++        }
++    }
++    int mmuidx = (type & 1 ? 0xf : 0) | (type & 2 ? 0xf0 : 0);
++    if (vpn == 0) {
++        tlb_flush_by_mmuidx(cpu, mmuidx);
++    } else {
++        tlb_flush_page_by_mmuidx(cpu, vpn << PGSHIFT, mmuidx);
++    }
++}
++
++tlbsim_client_t tlbsim_client = {
++    .phys_load = phys_load,
++    .phys_cmpxchg = phys_cmpxchg,
++    .invalidate_l0 = invalidate_l0,
++};
++
++int riscv_tlb_access(CPURISCVState* env, hwaddr *physical, int *prot,
++        target_ulong addr, int access_type, int mmu_idx)
++{
++    int mode = mmu_idx & 3;
++
++    if (mode == PRV_M && access_type != MMU_INST_FETCH) {
++        if (get_field(env->mstatus, MSTATUS_MPRV)) {
++            mode = get_field(env->mstatus, MSTATUS_MPP);
++        }
++    }
++
++    if (mode == PRV_M || !riscv_feature(env, RISCV_FEATURE_MMU) ||
++            !get_field(env->satp, SATP_MODE)) {
++        *physical = addr;
++        *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
++        return TRANSLATE_SUCCESS;
++    }
++
++    int mxr = get_field(env->mstatus, MSTATUS_MXR);
++    tlbsim_req_t req = {
++        .satp = env->satp,
++        .vpn = addr >> PGSHIFT,
++        .asid = get_field(env->satp, SATP_ASID),
++        .hartid = env->mhartid,
++        .ifetch = access_type == MMU_INST_FETCH,
++        .write = access_type == MMU_DATA_STORE,
++        .supervisor = mode != 0,
++        .mxr = mxr,
++        .sum = access_type == MMU_INST_FETCH ? 0 : get_field(env->mstatus, MSTATUS_SUM),
++    };
++
++    tlbsim_resp_t resp = tlbsim_access(&req);
++    if (!resp.perm) return TRANSLATE_FAIL;
++
++    *physical = resp.ppn << PGSHIFT;
++    *prot = 0;
++    if ((resp.pte & PTE_R) || ((resp.pte & PTE_X) && mxr)) {
++        *prot |= PAGE_READ;
++    }
++    if ((resp.pte & PTE_X)) {
++        *prot |= PAGE_EXEC;
++    }
++    if ((resp.pte & PTE_W) && (resp.pte & PTE_D)) {
++        *prot |= PAGE_WRITE;
++    }
++    return TRANSLATE_SUCCESS;
++}
++
+-- 
+2.17.1
+

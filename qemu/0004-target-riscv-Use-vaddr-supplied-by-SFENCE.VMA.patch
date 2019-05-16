@@ -1,0 +1,92 @@
+From 698d3f696def5512a3043a9284b74bf17f2fc82a Mon Sep 17 00:00:00 2001
+From: Gary Guo <gary@garyguo.net>
+Date: Tue, 26 Mar 2019 13:52:42 +0000
+Subject: [PATCH 4/8] target/riscv: Use vaddr supplied by SFENCE.VMA
+
+This patch modifies tlb flush helper to accept two additional operands,
+asid and vaddr.  We use vaddr to do a page-level flush.
+
+Signed-off-by: Gary Guo <gary@garyguo.net>
+---
+ target/riscv/helper.h                         |  2 +-
+ .../riscv/insn_trans/trans_privileged.inc.c   | 19 +++++++++++++++++--
+ target/riscv/op_helper.c                      |  8 ++++++--
+ 3 files changed, 24 insertions(+), 5 deletions(-)
+
+diff --git a/target/riscv/helper.h b/target/riscv/helper.h
+index debb22a480..45890d04bb 100644
+--- a/target/riscv/helper.h
++++ b/target/riscv/helper.h
+@@ -74,5 +74,5 @@ DEF_HELPER_4(csrrc, tl, env, tl, tl, tl)
+ DEF_HELPER_2(sret, tl, env, tl)
+ DEF_HELPER_2(mret, tl, env, tl)
+ DEF_HELPER_1(wfi, void, env)
+-DEF_HELPER_1(tlb_flush, void, env)
++DEF_HELPER_3(tlb_flush, void, env, tl, tl)
+ #endif
+diff --git a/target/riscv/insn_trans/trans_privileged.inc.c b/target/riscv/insn_trans/trans_privileged.inc.c
+index acb605923e..6ddaa71065 100644
+--- a/target/riscv/insn_trans/trans_privileged.inc.c
++++ b/target/riscv/insn_trans/trans_privileged.inc.c
+@@ -91,7 +91,17 @@ static bool trans_sfence_vma(DisasContext *ctx, arg_sfence_vma *a)
+ {
+ #ifndef CONFIG_USER_ONLY
+     if (ctx->priv_ver == PRIV_VERSION_1_10_0) {
+-        gen_helper_tlb_flush(cpu_env);
++        TCGv asid = tcg_temp_new();
++        TCGv vaddr = tcg_temp_new();
++
++        if (a->rs2 == 0) {
++            /* -1 isn't a valid ASID, use it to mean 'global' */
++            tcg_gen_movi_tl(asid, -1);
++        } else {
++            gen_get_gpr(asid, a->rs2);
++        }
++        gen_get_gpr(vaddr, a->rs1);
++        gen_helper_tlb_flush(cpu_env, asid, vaddr);
+         return true;
+     }
+ #endif
+@@ -102,7 +112,12 @@ static bool trans_sfence_vm(DisasContext *ctx, arg_sfence_vm *a)
+ {
+ #ifndef CONFIG_USER_ONLY
+     if (ctx->priv_ver <= PRIV_VERSION_1_09_1) {
+-        gen_helper_tlb_flush(cpu_env);
++        TCGv asid = tcg_temp_new();
++        TCGv vaddr = tcg_temp_new();
++
++        tcg_gen_movi_tl(asid, -1);
++        gen_get_gpr(vaddr, a->rs1);
++        gen_helper_tlb_flush(cpu_env, asid, vaddr);
+         return true;
+     }
+ #endif
+diff --git a/target/riscv/op_helper.c b/target/riscv/op_helper.c
+index b7dc18a41e..4e2c6a2e0c 100644
+--- a/target/riscv/op_helper.c
++++ b/target/riscv/op_helper.c
+@@ -141,7 +141,7 @@ void helper_wfi(CPURISCVState *env)
+     }
+ }
+ 
+-void helper_tlb_flush(CPURISCVState *env)
++void helper_tlb_flush(CPURISCVState *env, target_ulong asid, target_ulong vaddr)
+ {
+     RISCVCPU *cpu = riscv_env_get_cpu(env);
+     CPUState *cs = CPU(cpu);
+@@ -150,7 +150,11 @@ void helper_tlb_flush(CPURISCVState *env)
+         get_field(env->mstatus, MSTATUS_TVM)) {
+         riscv_raise_exception(env, RISCV_EXCP_ILLEGAL_INST, GETPC());
+     } else {
+-        tlb_flush(cs);
++        if (vaddr == 0) {
++            tlb_flush(cs);
++        } else {
++            tlb_flush_page(cs, vaddr & TARGET_PAGE_MASK);
++        }
+     }
+ }
+ 
+-- 
+2.17.1
+

@@ -1,0 +1,25 @@
+From 08404e1e9f1ec67ebf0fe154870e5ad5fd8a6ad3 Mon Sep 17 00:00:00 2001
+From: Gary Guo <gary@garyguo.net>
+Date: Tue, 26 Mar 2019 13:54:18 +0000
+Subject: [PATCH 6/8] TLBSim: Increase max CPU number to 32.
+
+---
+ hw/riscv/virt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/riscv/virt.c b/hw/riscv/virt.c
+index fc4c6b306e..898df6a8d0 100644
+--- a/hw/riscv/virt.c
++++ b/hw/riscv/virt.c
+@@ -525,7 +525,7 @@ static void riscv_virt_board_machine_init(MachineClass *mc)
+ {
+     mc->desc = "RISC-V VirtIO Board (Privileged ISA v1.10)";
+     mc->init = riscv_virt_board_init;
+-    mc->max_cpus = 8; /* hardcoded limit in BBL */
++    mc->max_cpus = 32; /* hardcoded limit in BBL */
+ }
+ 
+ DEFINE_MACHINE("virt", riscv_virt_board_machine_init)
+-- 
+2.17.1
+

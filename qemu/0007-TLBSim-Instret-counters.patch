@@ -1,0 +1,263 @@
+From 88984b34f990dca15572709c83739ad75688a533 Mon Sep 17 00:00:00 2001
+From: Gary Guo <gary@garyguo.net>
+Date: Mon, 15 Apr 2019 15:35:10 +0100
+Subject: [PATCH 7/8] TLBSim: Instret counters
+
+---
+ target/riscv/cpu.h                      |  3 ++
+ target/riscv/cpu_helper.c               | 12 +++++--
+ target/riscv/insn_trans/trans_rva.inc.c |  4 +++
+ target/riscv/insn_trans/trans_rvd.inc.c |  2 ++
+ target/riscv/insn_trans/trans_rvf.inc.c |  2 ++
+ target/riscv/insn_trans/trans_rvi.inc.c |  2 ++
+ target/riscv/translate.c                | 42 ++++++++++++++++++++++++-
+ 7 files changed, 64 insertions(+), 3 deletions(-)
+
+diff --git a/target/riscv/cpu.h b/target/riscv/cpu.h
+index c892be9694..7d6af6b4e7 100644
+--- a/target/riscv/cpu.h
++++ b/target/riscv/cpu.h
+@@ -116,6 +116,9 @@ struct CPURISCVState {
+ 
+     target_ulong tval;
+ 
++    uint64_t instret;
++    uint64_t minstret;
++
+     target_ulong user_ver;
+     target_ulong priv_ver;
+     target_ulong misa;
+diff --git a/target/riscv/cpu_helper.c b/target/riscv/cpu_helper.c
+index f173aaef9e..53f1795377 100644
+--- a/target/riscv/cpu_helper.c
++++ b/target/riscv/cpu_helper.c
+@@ -25,6 +25,8 @@
+ #include "tcg-op.h"
+ #include "trace.h"
+ 
++#include <tlbsim.h>
++
+ int riscv_cpu_mmu_index(CPURISCVState *env, bool ifetch)
+ {
+ #ifdef CONFIG_USER_ONLY
+@@ -55,10 +57,16 @@ static int riscv_cpu_local_irq_pending(CPURISCVState *env)
+ 
+ bool riscv_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
+ {
++    RISCVCPU *cpu = RISCV_CPU(cs);
++    CPURISCVState *env = &cpu->env;
++
++    atomic_add(&tlbsim_instret, env->instret);
++    env->instret = 0;
++    atomic_add(&tlbsim_minstret, env->minstret);
++    env->minstret = 0;
++
+ #if !defined(CONFIG_USER_ONLY)
+     if (interrupt_request & CPU_INTERRUPT_HARD) {
+-        RISCVCPU *cpu = RISCV_CPU(cs);
+-        CPURISCVState *env = &cpu->env;
+         int interruptno = riscv_cpu_local_irq_pending(env);
+         if (interruptno >= 0) {
+             cs->exception_index = RISCV_EXCP_INT_FLAG | interruptno;
+diff --git a/target/riscv/insn_trans/trans_rva.inc.c b/target/riscv/insn_trans/trans_rva.inc.c
+index f6dbbc065e..a688bafd4d 100644
+--- a/target/riscv/insn_trans/trans_rva.inc.c
++++ b/target/riscv/insn_trans/trans_rva.inc.c
+@@ -21,6 +21,8 @@
+ static inline bool gen_lr(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
+ {
+     TCGv src1 = tcg_temp_new();
++    ctx->minstret_incr_num++;
++
+     /* Put addr in load_res, data in load_val.  */
+     gen_get_gpr(src1, a->rs1);
+     if (a->rl) {
+@@ -44,6 +46,7 @@ static inline bool gen_sc(DisasContext *ctx, arg_atomic *a, TCGMemOp mop)
+     TCGv dat = tcg_temp_new();
+     TCGLabel *l1 = gen_new_label();
+     TCGLabel *l2 = gen_new_label();
++    ctx->minstret_incr_num++;
+ 
+     gen_get_gpr(src1, a->rs1);
+     tcg_gen_brcond_tl(TCG_COND_NE, load_res, src1, l1);
+@@ -81,6 +84,7 @@ static bool gen_amo(DisasContext *ctx, arg_atomic *a,
+ {
+     TCGv src1 = tcg_temp_new();
+     TCGv src2 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+ 
+     gen_get_gpr(src1, a->rs1);
+     gen_get_gpr(src2, a->rs2);
+diff --git a/target/riscv/insn_trans/trans_rvd.inc.c b/target/riscv/insn_trans/trans_rvd.inc.c
+index 393fa0248c..bc6b246ab5 100644
+--- a/target/riscv/insn_trans/trans_rvd.inc.c
++++ b/target/riscv/insn_trans/trans_rvd.inc.c
+@@ -21,6 +21,7 @@
+ static bool trans_fld(DisasContext *ctx, arg_fld *a)
+ {
+     TCGv t0 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, a->rs1);
+     REQUIRE_FPU;
+     REQUIRE_EXT(ctx, RVD);
+@@ -36,6 +37,7 @@ static bool trans_fld(DisasContext *ctx, arg_fld *a)
+ static bool trans_fsd(DisasContext *ctx, arg_fsd *a)
+ {
+     TCGv t0 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, a->rs1);
+     REQUIRE_FPU;
+     REQUIRE_EXT(ctx, RVD);
+diff --git a/target/riscv/insn_trans/trans_rvf.inc.c b/target/riscv/insn_trans/trans_rvf.inc.c
+index 172dbfa919..b6c9f9cdb4 100644
+--- a/target/riscv/insn_trans/trans_rvf.inc.c
++++ b/target/riscv/insn_trans/trans_rvf.inc.c
+@@ -26,6 +26,7 @@
+ static bool trans_flw(DisasContext *ctx, arg_flw *a)
+ {
+     TCGv t0 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, a->rs1);
+     REQUIRE_FPU;
+     REQUIRE_EXT(ctx, RVF);
+@@ -43,6 +44,7 @@ static bool trans_flw(DisasContext *ctx, arg_flw *a)
+ static bool trans_fsw(DisasContext *ctx, arg_fsw *a)
+ {
+     TCGv t0 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, a->rs1);
+ 
+     REQUIRE_FPU;
+diff --git a/target/riscv/insn_trans/trans_rvi.inc.c b/target/riscv/insn_trans/trans_rvi.inc.c
+index d420a4d8b2..276410a3d9 100644
+--- a/target/riscv/insn_trans/trans_rvi.inc.c
++++ b/target/riscv/insn_trans/trans_rvi.inc.c
+@@ -133,6 +133,7 @@ static bool gen_load(DisasContext *ctx, arg_lb *a, TCGMemOp memop)
+ {
+     TCGv t0 = tcg_temp_new();
+     TCGv t1 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, a->rs1);
+     tcg_gen_addi_tl(t0, t0, a->imm);
+ 
+@@ -172,6 +173,7 @@ static bool gen_store(DisasContext *ctx, arg_sb *a, TCGMemOp memop)
+ {
+     TCGv t0 = tcg_temp_new();
+     TCGv dat = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, a->rs1);
+     tcg_gen_addi_tl(t0, t0, a->imm);
+     gen_get_gpr(dat, a->rs2);
+diff --git a/target/riscv/translate.c b/target/riscv/translate.c
+index 36fcdedb7c..995af690f2 100644
+--- a/target/riscv/translate.c
++++ b/target/riscv/translate.c
+@@ -39,6 +39,8 @@ static TCGv load_val;
+ 
+ #include "exec/gen-icount.h"
+ 
++#include <tlbsim.h>
++
+ typedef struct DisasContext {
+     DisasContextBase base;
+     /* pc_succ_insn points to the instruction following base.pc_next */
+@@ -54,6 +56,10 @@ typedef struct DisasContext {
+        to any system register, which includes CSR_FRM, so we do not have
+        to reset this known value.  */
+     int frm;
++    TCGOp *instret_incr;
++    TCGOp *minstret_incr;
++    uint64_t instret_incr_num;
++    uint64_t minstret_incr_num;
+ } DisasContext;
+ 
+ #ifdef TARGET_RISCV64
+@@ -322,6 +328,7 @@ static void gen_load_c(DisasContext *ctx, uint32_t opc, int rd, int rs1,
+ {
+     TCGv t0 = tcg_temp_new();
+     TCGv t1 = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, rs1);
+     tcg_gen_addi_tl(t0, t0, imm);
+     int memop = tcg_memop_lookup[(opc >> 12) & 0x7];
+@@ -342,6 +349,7 @@ static void gen_store_c(DisasContext *ctx, uint32_t opc, int rs1, int rs2,
+ {
+     TCGv t0 = tcg_temp_new();
+     TCGv dat = tcg_temp_new();
++    ctx->minstret_incr_num++;
+     gen_get_gpr(t0, rs1);
+     tcg_gen_addi_tl(t0, t0, imm);
+     gen_get_gpr(dat, rs2);
+@@ -388,6 +396,7 @@ static void gen_fp_load(DisasContext *ctx, uint32_t opc, int rd,
+         int rs1, target_long imm)
+ {
+     TCGv t0;
++    ctx->minstret_incr_num++;
+ 
+     if (ctx->mstatus_fs == 0) {
+         gen_exception_illegal(ctx);
+@@ -427,6 +436,7 @@ static void gen_fp_store(DisasContext *ctx, uint32_t opc, int rs1,
+         int rs2, target_long imm)
+ {
+     TCGv t0;
++    ctx->minstret_incr_num++;
+ 
+     if (ctx->mstatus_fs == 0) {
+         gen_exception_illegal(ctx);
+@@ -706,8 +716,32 @@ static void riscv_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
+     ctx->frm = -1;  /* unknown rounding mode */
+ }
+ 
+-static void riscv_tr_tb_start(DisasContextBase *db, CPUState *cpu)
++static void riscv_tr_tb_start(DisasContextBase *dcbase, CPUState *cpu)
+ {
++    DisasContext *ctx = container_of(dcbase, DisasContext, base);
++
++    if (tlbsim_need_instret) {
++        TCGv_i64 imm = tcg_temp_new_i64();
++        TCGv_i64 tmp = tcg_temp_new_i64();
++        tcg_gen_ld_i64(tmp, cpu_env, offsetof(CPURISCVState, instret));
++        tcg_gen_movi_i64(imm, 0xdeadbeef);
++        ctx->instret_incr = tcg_last_op();
++        tcg_gen_add_tl(tmp, tmp, imm);
++        tcg_gen_st_i64(tmp, cpu_env, offsetof(CPURISCVState, instret));
++    }
++
++    if (tlbsim_need_minstret) {
++        TCGv_i64 imm = tcg_temp_new_i64();
++        TCGv_i64 tmp = tcg_temp_new_i64();
++        tcg_gen_ld_i64(tmp, cpu_env, offsetof(CPURISCVState, minstret));
++        tcg_gen_movi_i64(imm, 0xdeadbeef);
++        ctx->minstret_incr = tcg_last_op();
++        tcg_gen_add_tl(tmp, tmp, imm);
++        tcg_gen_st_i64(tmp, cpu_env, offsetof(CPURISCVState, minstret));
++    }
++
++    ctx->instret_incr_num = 0;
++    ctx->minstret_incr_num = 0;
+ }
+ 
+ static void riscv_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
+@@ -741,6 +775,7 @@ static void riscv_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
+     ctx->opcode = cpu_ldl_code(env, ctx->base.pc_next);
+     decode_opc(ctx);
+     ctx->base.pc_next = ctx->pc_succ_insn;
++    ctx->instret_incr_num++;
+ 
+     if (ctx->base.is_jmp == DISAS_NEXT) {
+         target_ulong page_start;
+@@ -756,6 +791,11 @@ static void riscv_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
+ {
+     DisasContext *ctx = container_of(dcbase, DisasContext, base);
+ 
++    if (tlbsim_need_instret)
++        tcg_set_insn_param(ctx->instret_incr, 1, ctx->instret_incr_num);
++    if (tlbsim_need_minstret)
++        tcg_set_insn_param(ctx->minstret_incr, 1, ctx->minstret_incr_num);
++
+     switch (ctx->base.is_jmp) {
+     case DISAS_TOO_MANY:
+         gen_goto_tb(ctx, 0, ctx->base.pc_next);
+-- 
+2.17.1
+

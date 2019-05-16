@@ -1,0 +1,49 @@
+From 0e6c323b1a50fa043e61e8d0c0993a7c07bbf3b3 Mon Sep 17 00:00:00 2001
+From: Gary Guo <gary@garyguo.net>
+Date: Tue, 26 Mar 2019 13:50:34 +0000
+Subject: [PATCH 5/8] TLBSim: Isolate TLB used by instruction fetch and data
+ access.
+
+---
+ target/riscv/cpu.h        | 2 +-
+ target/riscv/cpu_helper.c | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/target/riscv/cpu.h b/target/riscv/cpu.h
+index f14ab8fe8f..c892be9694 100644
+--- a/target/riscv/cpu.h
++++ b/target/riscv/cpu.h
+@@ -96,7 +96,7 @@ enum {
+ 
+ #define TRANSLATE_FAIL 1
+ #define TRANSLATE_SUCCESS 0
+-#define NB_MMU_MODES 4
++#define NB_MMU_MODES 8
+ #define MMU_USER_IDX 3
+ 
+ #define MAX_RISCV_PMPS (16)
+diff --git a/target/riscv/cpu_helper.c b/target/riscv/cpu_helper.c
+index 020205498d..f173aaef9e 100644
+--- a/target/riscv/cpu_helper.c
++++ b/target/riscv/cpu_helper.c
+@@ -30,7 +30,7 @@ int riscv_cpu_mmu_index(CPURISCVState *env, bool ifetch)
+ #ifdef CONFIG_USER_ONLY
+     return 0;
+ #else
+-    return env->priv;
++    return env->priv | (ifetch ? 4 : 0);
+ #endif
+ }
+ 
+@@ -132,7 +132,7 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
+      * correct, but the value visible to the exception handler
+      * (riscv_cpu_do_interrupt) is correct */
+ 
+-    int mode = mmu_idx;
++    int mode = mmu_idx & 3;
+ 
+     if (mode == PRV_M && access_type != MMU_INST_FETCH) {
+         if (get_field(env->mstatus, MSTATUS_MPRV)) {
+-- 
+2.17.1
+
